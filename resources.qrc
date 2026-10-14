@@ -1,0 +1,1 @@
+<RCC><qresource prefix="/brand"><file alias="ramd-pdf.png">ramd-pdf.png</file></qresource><qresource prefix="/theme"><file alias="light.qss">light.qss</file><file alias="dark.qss">dark.qss</file></qresource></RCC>
