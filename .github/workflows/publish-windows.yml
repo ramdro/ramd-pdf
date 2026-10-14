@@ -1,0 +1,27 @@
+name: Publish Windows download
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/windows-build]
+    paths: [.github/workflows/publish-windows.yml]
+permissions:
+  actions: read
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ramdro/ramd-pdf
+    steps:
+      - name: Verify successful build
+        run: |
+          test "$(gh api repos/ramdro/ramd-pdf/actions/runs/38650006986 --jq .conclusion)" = success
+          test "$(gh api repos/ramdro/ramd-pdf/actions/runs/38650006986 --jq .head_sha)" = 8a15be094be2b725ed6c5bc2b6752a6195b2f22e
+      - name: Download installer artifact
+        run: gh run download 38650006986 --name RAMD-PDF-Windows-x64 --dir release-assets
+      - name: Publish installer without replacing existing assets
+        run: |
+          test -f release-assets/RAMD-PDF-0.6.0-Windows-x64-Setup.exe
+          gh release upload 0.6.0 release-assets/RAMD-PDF-0.6.0-Windows-x64-Setup.exe
