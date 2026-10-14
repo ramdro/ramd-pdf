@@ -1,0 +1,75 @@
+name: Build Windows installer
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, codex/windows-build]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-qt6-base
+            mingw-w64-ucrt-x86_64-qt6-pdf
+            mingw-w64-ucrt-x86_64-poppler-qt6
+            mingw-w64-ucrt-x86_64-qpdf
+            mingw-w64-ucrt-x86_64-ntldd
+      - name: Configure and build
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+          cmake --build build --parallel 2
+      - name: Test PDF editing
+        run: QT_QPA_PLATFORM=offscreen ctest --test-dir build --output-on-failure
+      - name: Bundle Windows dependencies
+        run: bash ci/bundle-windows.sh
+      - name: Test bundle without development PATH
+        shell: pwsh
+        run: |
+          $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
+          $env:QT_QPA_PLATFORM = 'offscreen'
+          & .\dist\qpdf.exe --version
+          if ($LASTEXITCODE -ne 0) { throw 'Bundled qpdf failed' }
+          & .\dist\editor-tests.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Bundled PDF tests failed' }
+          Remove-Item .\dist\editor-tests.exe
+          $app = Start-Process .\dist\ramd-pdf.exe -PassThru
+          Start-Sleep -Seconds 5
+          if ($app.HasExited) { throw 'Application exited during startup smoke test' }
+          Stop-Process -Id $app.Id
+      - name: Build EXE installer
+        shell: pwsh
+        run: |
+          $compiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (!(Test-Path $compiler)) {
+            choco install innosetup --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed' }
+          }
+          & $compiler ci\windows-installer.iss
+          if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed' }
+          Compress-Archive -Path dist\* -DestinationPath installer\RAMD-PDF-0.6.0-Windows-x64-Portable.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RAMD-PDF-Windows-x64
+          path: installer/*
+          if-no-files-found: error
+          retention-days: 14

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=RAMD PDF
+Exec=ramd-pdf %f
+Icon=ramd-pdf
+Terminal=false
+Categories=Office;Viewer;
+MimeType=application/pdf;

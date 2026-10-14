@@ -12,7 +12,13 @@ bool exportPdf(const State &state, const QString &target, QString &error) {
     for(const auto &s:state) args << s.source << QString::number(s.page+1);
     args << "--" << merged;
     QProcess process;
-    process.start("qpdf",args);
+    QString qpdf = QStandardPaths::findExecutable("qpdf");
+#ifdef Q_OS_WIN
+    const QString bundled = QCoreApplication::applicationDirPath() + "/qpdf.exe";
+    if (QFileInfo::exists(bundled)) qpdf = bundled;
+#endif
+    if (qpdf.isEmpty()) { error="qpdf was not found. Reinstall RAMD PDF or install qpdf."; return false; }
+    process.start(qpdf,args);
     if(!process.waitForStarted(5000)) { error="qpdf is missing. Install it using your distribution's package manager."; return false; }
     if(!process.waitForFinished(120000)) { process.kill(); process.waitForFinished(); error="Page assembly timed out. Original files are unchanged."; return false; }
     if(process.exitStatus()!=QProcess::NormalExit || (process.exitCode()!=0 && process.exitCode()!=3)) {
