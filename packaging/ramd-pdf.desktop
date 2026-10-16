@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=RAMD PDF
+Comment=Read and annotate PDF documents
+Exec=ramd-pdf %f
+Icon=ramd-pdf
+Terminal=false
+Categories=Office;Viewer;
+MimeType=application/pdf;
+StartupNotify=true
