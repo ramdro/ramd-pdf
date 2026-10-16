@@ -1,0 +1,28 @@
+name: Publish Mint download
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/mint-build]
+    paths: [.github/workflows/publish-mint.yml]
+permissions:
+  actions: read
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ramdro/ramd-pdf
+    steps:
+      - name: Verify successful build
+        run: |
+          test "$(gh api repos/ramdro/ramd-pdf/actions/runs/38967996264 --jq .conclusion)" = success
+          test "$(gh api repos/ramdro/ramd-pdf/actions/runs/38967996264 --jq .head_sha)" = a40652abc53c9e9e1db40be2a5cdc4e9790dcacd
+      - name: Download verified installer
+        run: gh run download 38967996264 --name RAMD-PDF-Mint22-amd64 --dir release-assets
+      - name: Publish without replacing existing assets
+        working-directory: release-assets
+        run: |
+          sha256sum -c ramd-pdf-0.6.0-mint22-amd64.deb.sha256
+          gh release upload 0.6.0 ramd-pdf-0.6.0-mint22-amd64.deb ramd-pdf-0.6.0-mint22-amd64.deb.sha256
