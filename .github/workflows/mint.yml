@@ -1,0 +1,55 @@
+name: Build Linux Mint installer
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/mint-build]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++ pkg-config qt6-base-dev qt6-pdf-dev libpoppler-qt6-dev qpdf dpkg-dev desktop-file-utils
+      - name: Build and test
+        run: |
+          cmake -S . -B build-deb -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+          cmake --build build-deb --parallel 2
+          QT_QPA_PLATFORM=offscreen ctest --test-dir build-deb --output-on-failure
+          desktop-file-validate packaging/ramd-pdf.desktop
+      - name: Package for Mint 22
+        working-directory: build-deb
+        run: |
+          cpack -G DEB -D CPACK_PACKAGE_NAME=ramd-pdf -D CPACK_DEBIAN_PACKAGE_NAME=ramd-pdf -D CPACK_PACKAGE_FILE_NAME=ramd-pdf-0.6.0-mint22-amd64 -D CPACK_DEBIAN_PACKAGE_ARCHITECTURE=amd64 -D CPACK_DEBIAN_PACKAGE_DEPENDS="qpdf, qt6-qpa-plugins, qt6-image-formats-plugins"
+          dpkg-deb --info ramd-pdf-0.6.0-mint22-amd64.deb
+          dpkg-deb --contents ramd-pdf-0.6.0-mint22-amd64.deb
+      - name: Verify installation in a clean Ubuntu 24.04 base
+        run: |
+          docker run --rm -v "$PWD/build-deb:/packages:ro" ubuntu:24.04 bash -euxc '
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y /packages/ramd-pdf-0.6.0-mint22-amd64.deb
+            test -f /usr/share/applications/ramd-pdf.desktop
+            test -f /usr/share/icons/hicolor/256x256/apps/ramd-pdf.png
+            qpdf --version
+            set +e
+            QT_QPA_PLATFORM=offscreen timeout 8s ramd-pdf >/tmp/launch.log 2>&1
+            result=$?
+            set -e
+            cat /tmp/launch.log
+            test "$result" -eq 124
+          '
+      - name: Create checksum
+        working-directory: build-deb
+        run: sha256sum ramd-pdf-0.6.0-mint22-amd64.deb > ramd-pdf-0.6.0-mint22-amd64.deb.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RAMD-PDF-Mint22-amd64
+          path: |
+            build-deb/ramd-pdf-0.6.0-mint22-amd64.deb
+            build-deb/ramd-pdf-0.6.0-mint22-amd64.deb.sha256
+          if-no-files-found: error
+          retention-days: 30
