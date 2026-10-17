@@ -1,6 +1,6 @@
 from pathlib import Path
 import struct
-png = Path('assets/ramd-pdf.png').read_bytes()
+png = Path('assets/ramd-icon-256.png').read_bytes()
 w, h = struct.unpack('>II', png[16:24])
 assert 0 < w <= 256 and 0 < h <= 256
 header = struct.pack('<HHH', 0, 1, 1)

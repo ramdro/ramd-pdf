@@ -86,7 +86,15 @@ jobs:
             mingw-w64-ucrt-x86_64-ntldd
       - name: Embed app icon
         shell: pwsh
-        run: python ci/make-icon.py
+        run: |
+          Add-Type -AssemblyName System.Drawing
+          $original = [System.Drawing.Bitmap]::new((Join-Path $PWD 'assets/ramd-pdf.png'))
+          $resized = [System.Drawing.Bitmap]::new($original, 256, 256)
+          $resized.Save((Join-Path $PWD 'assets/ramd-icon-256.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+          $resized.Dispose()
+          $original.Dispose()
+          python ci/make-icon.py
+          if ($LASTEXITCODE -ne 0) { throw 'Icon conversion failed' }
       - name: Configure and build
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
