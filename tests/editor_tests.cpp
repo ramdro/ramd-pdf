@@ -47,3 +47,4 @@ int main(int argc,char **argv) {
     }
     std::cout<<"PASS: text/ink/highlight save, merge, reorder, extract, overwrite, failure protection\n";
 }
+
