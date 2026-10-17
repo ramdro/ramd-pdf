@@ -12,7 +12,9 @@ bool exportPdf(const State &state, const QString &target, QString &error) {
     for(const auto &s:state) args << s.source << QString::number(s.page+1);
     args << "--" << merged;
     QProcess process;
-    process.start("qpdf",args);
+    const QString bundled=QCoreApplication::applicationDirPath()+"/qpdf.exe";
+    const QString executable=QFileInfo::exists(bundled)?bundled:QStringLiteral("qpdf");
+    process.start(executable,args);
     if(!process.waitForStarted(5000)) { error="qpdf is missing. Install it using your distribution's package manager."; return false; }
     if(!process.waitForFinished(120000)) { process.kill(); process.waitForFinished(); error="Page assembly timed out. Original files are unchanged."; return false; }
     if(process.exitStatus()!=QProcess::NormalExit || (process.exitCode()!=0 && process.exitCode()!=3)) {
@@ -270,3 +272,4 @@ void Editor::editMark(int index) {
     auto next=state;next[row].marks[index].text=value;change(next,"Edit text");
 }
 }
+
