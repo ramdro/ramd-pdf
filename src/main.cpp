@@ -323,7 +323,7 @@ public:
             }
             thumbnails->setIconSize(QSize(96,126));
             if(doc.pageCount()>150)statusBar()->showMessage("Showing first 150 page previews to preserve memory",5000);}else{page->setRange(1,1);count->setText("/ 0");thumbnails->clear();}});
-        menuBar()->addMenu("&Help")->addAction("About",this,[this]{QMessageBox::about(this,"RAMD PDF","<h2>RAMD PDF</h2>Offline PDF workspace v0.7.0-preview<br>RAMD Studios");});
+        menuBar()->addMenu("&Help")->addAction("About",this,[this]{QMessageBox::about(this,"RAMD PDF","<h2>RAMD PDF</h2>Offline PDF workspace v0.9 Full<br>RAMD Studios");});
         history=QSettings().value("recent").toStringList();refreshRecent();
         restoreGeometry(QSettings().value("windowGeometry").toByteArray());
         operationProgress->setRange(0,0);operationProgress->setMaximumWidth(140);operationProgress->hide();
@@ -385,7 +385,7 @@ public:
         auto *brand=new QHBoxLayout;
         auto *logo=new QLabel(sidebar);logo->setPixmap(QPixmap(":/brand/ramd-pdf.png").scaled(34,34,Qt::KeepAspectRatio,Qt::SmoothTransformation));
         brand->addWidget(logo);auto *name=new QLabel("RAMD PDF",sidebar);name->setObjectName("brandName");brand->addWidget(name);brand->addStretch();side->addLayout(brand);
-        auto *edition=new QLabel("WORKSPACE  /  0.7 PREVIEW",sidebar);edition->setObjectName("sectionLabel");side->addSpacing(10);side->addWidget(edition);side->addSpacing(28);
+        auto *edition=new QLabel("WORKSPACE  /  0.9 FULL",sidebar);edition->setObjectName("sectionLabel");side->addSpacing(10);side->addWidget(edition);side->addSpacing(28);
         auto nav=[this,side,sidebar](const QString &key,const QString &label,QStyle::StandardPixmap icon) {
             auto *button=new QPushButton(style()->standardIcon(icon),label,sidebar);button->setObjectName("navButton");
             button->setProperty("section",key);button->setCheckable(true);button->setChecked(key=="Home");button->setMinimumHeight(40);
