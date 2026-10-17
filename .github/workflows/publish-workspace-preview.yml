@@ -1,0 +1,41 @@
+name: Publish tested Mint workspace preview
+on:
+  push:
+    branches: [codex/workspace-v07]
+    paths: [.github/workflows/publish-workspace-preview.yml]
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download and verify tested installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ramdro/ramd-pdf
+        run: |
+          set -euo pipefail
+          gh api repos/ramdro/ramd-pdf/actions/runs/39055131887 --jq '[.conclusion,.head_sha]|join(" ")' > run.txt
+          test "$(cat run.txt)" = "success b51fac90c3216328c3ca58131b5544c445645589"
+          gh run download 39055131887 --name RAMD-PDF-0.7-Mint22-amd64 --dir package
+          cd package
+          sha256sum -c ramd-pdf-0.7.0-mint22-amd64.deb.sha256
+          test "$(dpkg-deb -f ramd-pdf-0.7.0-mint22-amd64.deb Version)" = "0.7.0"
+      - name: Publish prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ramdro/ramd-pdf
+        run: |
+          cat > notes.md <<'NOTES'
+          RAMD PDF 0.7 preview for Linux Mint 22.x and Ubuntu 24.04, amd64.
+
+          Includes a redesigned library, real dark theme, saved reading positions, bookmarks, PDF merging, page extraction, sorting, favorites and drag-and-drop opening.
+
+          Download the .deb and open it with your package installer. The .sha256 file is an optional checksum.
+
+          All three automated test suites passed. Installation and launch were checked in a clean Ubuntu 24.04 container. Please try this preview on your Mint desktop before using it as your everyday version.
+
+          This installer is the exact artifact tested in run 39055131887, from commit b51fac90c3216328c3ca58131b5544c445645589. Stable version 0.6.0 remains available.
+          NOTES
+          gh release create 0.7.0-preview.1 package/ramd-pdf-0.7.0-mint22-amd64.deb package/ramd-pdf-0.7.0-mint22-amd64.deb.sha256 --target b51fac90c3216328c3ca58131b5544c445645589 --prerelease --latest=false --title "RAMD PDF 0.7 Preview — Linux Mint 22" --notes-file notes.md

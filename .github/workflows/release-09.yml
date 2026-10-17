@@ -1,0 +1,204 @@
+name: RAMD PDF 0.9 Full
+on:
+  push:
+    branches: [codex/release-09]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ramd-release-09
+  cancel-in-progress: true
+jobs:
+  mint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++ pkg-config qt6-base-dev qt6-pdf-dev libpoppler-qt6-dev qpdf dpkg-dev desktop-file-utils
+      - name: Build and test
+        run: |
+          cmake -S . -B build-deb -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+          cmake --build build-deb --parallel 2
+          QT_QPA_PLATFORM=offscreen ctest --test-dir build-deb --output-on-failure
+          desktop-file-validate packaging/ramd-pdf.desktop
+      - name: Package for Mint 22
+        working-directory: build-deb
+        run: |
+          cpack -G DEB -D CPACK_PACKAGE_NAME=ramd-pdf -D CPACK_DEBIAN_PACKAGE_NAME=ramd-pdf -D CPACK_PACKAGE_FILE_NAME=ramd-pdf-0.9.0-mint22-amd64 -D CPACK_DEBIAN_PACKAGE_ARCHITECTURE=amd64 -D CPACK_DEBIAN_PACKAGE_DEPENDS="qpdf, qt6-qpa-plugins, qt6-image-formats-plugins"
+          dpkg-deb --info ramd-pdf-0.9.0-mint22-amd64.deb
+          dpkg-deb --contents ramd-pdf-0.9.0-mint22-amd64.deb
+      - name: Verify installation in a clean Ubuntu 24.04 base
+        run: |
+          docker run --rm -v "$PWD/build-deb:/packages:ro" ubuntu:24.04 bash -euxc '
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y /packages/ramd-pdf-0.9.0-mint22-amd64.deb
+            test -f /usr/share/applications/ramd-pdf.desktop
+            test -f /usr/share/icons/hicolor/256x256/apps/ramd-pdf.png
+            qpdf --version
+            set +e
+            QT_QPA_PLATFORM=offscreen timeout 8s ramd-pdf >/tmp/launch.log 2>&1
+            result=$?
+            set -e
+            cat /tmp/launch.log
+            test "$result" -eq 124
+          '
+      - name: Create checksum
+        working-directory: build-deb
+        run: sha256sum ramd-pdf-0.9.0-mint22-amd64.deb > ramd-pdf-0.9.0-mint22-amd64.deb.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-mint
+          path: |
+            build-deb/ramd-pdf-0.9.0-mint22-amd64.deb
+            build-deb/ramd-pdf-0.9.0-mint22-amd64.deb.sha256
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: RAMD-PDF-interface-previews
+          path: build-deb/ui-previews/*.png
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-qt6-base
+            mingw-w64-ucrt-x86_64-qt6-pdf
+            mingw-w64-ucrt-x86_64-poppler-qt6
+            mingw-w64-ucrt-x86_64-qpdf
+            mingw-w64-ucrt-x86_64-ntldd
+      - name: Embed app icon
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.Drawing
+          $original = [System.Drawing.Bitmap]::new((Join-Path $PWD 'assets/ramd-pdf.png'))
+          $resized = [System.Drawing.Bitmap]::new($original, 256, 256)
+          $resized.Save((Join-Path $PWD 'assets/ramd-icon-256.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+          $resized.Dispose()
+          $original.Dispose()
+          python ci/make-icon.py
+          if ($LASTEXITCODE -ne 0) { throw 'Icon conversion failed' }
+      - name: Configure and build
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+          cmake --build build --parallel 2
+      - name: Test PDF editing
+        run: QT_QPA_PLATFORM=offscreen ctest --test-dir build --output-on-failure
+      - name: Bundle Windows dependencies
+        run: bash ci/bundle-windows.sh
+      - name: Test bundle without development PATH
+        shell: pwsh
+        run: |
+          $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
+          $env:QT_QPA_PLATFORM = 'offscreen'
+          & .\dist\qpdf.exe --version
+          if ($LASTEXITCODE -ne 0) { throw 'Bundled qpdf failed' }
+          & .\dist\editor-tests.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Bundled PDF tests failed' }
+          & .\dist\pdf-tools-tests.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Bundled PDF tools failed' }
+          & .\dist\reader-ui-tests.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Bundled reader tests failed' }
+          Remove-Item .\dist\editor-tests.exe, .\dist\pdf-tools-tests.exe, .\dist\reader-ui-tests.exe
+          $app = Start-Process .\dist\ramd-pdf.exe -PassThru
+          Start-Sleep -Seconds 5
+          if ($app.HasExited) { throw 'Application exited during startup smoke test' }
+          Stop-Process -Id $app.Id
+      - name: Build EXE installer
+        shell: pwsh
+        run: |
+          $compiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (!(Test-Path $compiler)) {
+            choco install innosetup --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed' }
+          }
+          & $compiler ci\windows-installer.iss
+          if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed' }
+          Compress-Archive -Path dist\* -DestinationPath installer\RAMD-PDF-0.9.0-Windows-x64-Portable.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
+          path: installer/*
+          if-no-files-found: error
+          retention-days: 14
+  fedora:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        fedora: [43, 44]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and test Fedora RPM
+        env:
+          FEDORA_VERSION: ${{ matrix.fedora }}
+        run: |
+          docker run --rm -e FEDORA_VERSION -v "$PWD:/src" -w /src fedora:$FEDORA_VERSION bash -euxc '
+            dnf install -y gcc-c++ cmake ninja-build pkgconf-pkg-config qt6-qtbase-devel qt6-qtpdf-devel poppler-qt6-devel qpdf rpm-build desktop-file-utils
+            cmake -S . -B build-rpm -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+            cmake --build build-rpm --parallel 2
+            QT_QPA_PLATFORM=offscreen ctest --test-dir build-rpm --output-on-failure
+            desktop-file-validate packaging/ramd-pdf.desktop
+            cd build-rpm
+            cpack -G RPM -D CPACK_RPM_PACKAGE_RELEASE=1.fc$FEDORA_VERSION -D CPACK_PACKAGE_FILE_NAME=ramd-pdf-0.9.0-1.fc$FEDORA_VERSION.x86_64
+          '
+      - name: Verify clean Fedora installation
+        env:
+          FEDORA_VERSION: ${{ matrix.fedora }}
+        run: |
+          docker run --rm -e FEDORA_VERSION -v "$PWD/build-rpm:/packages:ro" fedora:$FEDORA_VERSION bash -euxc '
+            dnf install -y /packages/ramd-pdf-0.9.0-1.fc$FEDORA_VERSION.x86_64.rpm
+            qpdf --version
+            test -f /usr/share/applications/ramd-pdf.desktop
+            set +e
+            QT_QPA_PLATFORM=offscreen timeout 8s ramd-pdf > /tmp/launch.log 2>&1
+            result=$?
+            set -e
+            cat /tmp/launch.log
+            test "$result" -eq 124
+          '
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-fedora-${{ matrix.fedora }}
+          path: build-rpm/*.rpm
+          if-no-files-found: error
+  publish:
+    needs: [mint, windows, fedora]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release
+          merge-multiple: true
+      - name: Publish 0.9 Full as latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ramdro/ramd-pdf
+        run: |
+          set -euo pipefail
+          cd release
+          sha256sum *.deb *.rpm *.exe *.zip > SHA256SUMS.txt
+          gh release create 0.9.0 ./* --target "$GITHUB_SHA" --latest --title "RAMD PDF 0.9 Full" --notes-file ../RELEASE-0.9.md
